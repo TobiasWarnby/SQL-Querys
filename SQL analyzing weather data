@@ -1,0 +1,346 @@
+-- CREATE THE FIRST TABLE HourlyTemperature 
+
+
+ CREATE TABLE WEATHER_DATA.BRONZE.HourlyTemperature 
+(
+RecordDate DATE,
+RecordHour TIME, 
+HourlyTemperature FLOAT,
+City VARCHAR (50)
+);
+
+--INSERTED CCOLUMN FROM THE RAW DATA TO THE NEW
+
+INSERT into WEATHER_DATA.BRONZE.HourlyTemperature 
+(RecordDate, 
+RecordHour, 
+HourlyTemperature)
+SELECT 
+TIME, 
+TIME, 
+TEMPERATURE_2M
+FROM WEATHER_DATA.BRONZE.RAW_WEATHER;
+
+
+-- UPDATE THE CITY COULUM THAT WAS BLANC
+
+UPDATE WEATHER_DATA.BRONZE.HourlyTemperature
+SET city = 'Stockholm';
+
+-- SELSCT ALL TO SEE IF IT WORKED
+
+SELECT *
+FROM WEATHER_DATA.BRONZE.HourlyTemperature
+order by recorddate DESC;
+
+
+-- DELET NaN bacause data is't complited so when i tried to anwser the question the it gave me 'NaN'
+
+DELETE FROM WEATHER_DATA.BRONZE.HourlyTemperature
+WHERE HourlyTemperature = 'NaN';
+
+
+
+-- CREATE A VIEW
+
+CREATE VIEW WEATHER_DATA.SILVER.HOURLYTEMPERATURE_SILVER AS
+SELECT *
+FROM WEATHER_DATA.BRONZE.HOURLYTEMPERATURE;
+
+
+-- 1.  Which was the hottest summer month and what was the temperature each year? 
+
+-- do a cte because it takes less data then subcuery
+
+WITH Hot_month AS
+(
+SELECT
+YEAR(RECORDDATE)::VARCHAR AS Year,
+MONTHNAME(RECORDDATE) AS Month,
+ROUND(AVG(DAILYAVERAGETEMPERATURE), 2) AS Avg_temp_c,
+
+
+-- Do VARCHAR to exclude the "," 
+-- rank to be able to rank the months
+-- partition by is to group the rank in to the year
+-- order by  DESC is to show the higest number in that year
+
+RANK () OVER (PARTITION BY YEAR(RECORDDATE) 
+ORDER BY AVG(DAILYAVERAGETEMPERATURE) DESC) AS year_rank
+
+FROM WEATHER_DATA.GOLD.DailyAverageTemperature
+GROUP BY 
+YEAR(RECORDDATE),
+MONTHNAME(RECORDDATE)
+)
+-- when we have createad the cte we can use it and use the where clause.
+-- the where year_rank = 1 is the rank the higest avg tempetue to each year, so we only get one answer per year.
+-- selct the month so it's shownd in the answer
+-- where month in summer
+SELECT
+year,
+month,
+Avg_temp_c
+FROM Hot_month
+WHERE year_rank = 1
+AND month in ('Jul', 'Jun', 'Aug')
+ORDER BY year;
+
+-- 2.  Which was the hottest day in the summer months and what was the temperature each year? 
+
+
+WITH Hot_day AS
+(
+SELECT
+YEAR(RECORDDATE)::VARCHAR AS Year,
+MONTHNAME(RECORDDATE) AS Month,
+DAY(RECORDDATE) AS Hottest_day,
+ROUND(MAX(DAILYAVERAGETEMPERATURE), 2) AS Avg_temp_c,
+
+RANK () OVER (PARTITION BY YEAR(RECORDDATE) 
+ORDER BY MAX(DAILYAVERAGETEMPERATURE) DESC) AS year_rank
+
+FROM WEATHER_DATA.GOLD.DailyAverageTemperature
+WHERE month in ('Jul', 'Jun', 'Aug')
+GROUP BY 
+YEAR(RECORDDATE),
+month,
+RECORDDATE
+)
+
+SELECT
+Year,
+Month,
+Hottest_day,
+Avg_temp_c
+FROM Hot_day
+WHERE year_rank = 1
+ORDER BY Year;
+
+-- 3.  Which was the coldest winter month and what was the temperature each year? 
+WITH Cold_month AS
+(
+SELECT
+YEAR(RECORDDATE)::VARCHAR AS Year,
+MONTHNAME(RECORDDATE) AS Month,
+ROUND(AVG(DAILYAVERAGETEMPERATURE), 2) AS Avg_temp_c,
+
+RANK () OVER (PARTITION BY YEAR(RECORDDATE) 
+ORDER BY AVG(DAILYAVERAGETEMPERATURE)) AS year_rank
+
+FROM WEATHER_DATA.GOLD.DailyAverageTemperature
+WHERE month in ('Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb' )
+GROUP BY 
+YEAR(RECORDDATE),
+MONTHNAME(RECORDDATE)
+)
+SELECT
+year,
+month,
+Avg_temp_c
+FROM Cold_month
+WHERE year_rank = 1
+ORDER BY year;
+
+-- 4.  Which was the coldest day in the winter months and what was the temperature each year? 
+WITH Cold_day AS
+(
+SELECT
+YEAR(RECORDDATE)::VARCHAR AS Year,
+MONTHNAME(RECORDDATE) AS Month,
+DAY(RECORDDATE) AS CoLdest_day,
+ROUND(MIN(DAILYAVERAGETEMPERATURE), 2) AS Avg_temp_c,
+
+RANK () OVER (PARTITION BY YEAR(RECORDDATE) 
+ORDER BY MIN(DAILYAVERAGETEMPERATURE)) AS year_rank
+
+FROM WEATHER_DATA.GOLD.DailyAverageTemperature
+WHERE month in ('Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb' )
+GROUP BY 
+YEAR(RECORDDATE),
+RECORDDATE
+)
+
+SELECT
+Year,
+month,
+CoLdest_day,
+Avg_temp_c
+FROM Cold_day
+WHERE year_rank = 1
+ORDER BY Year;
+
+-- 5.  Which was the windiest month each year and what was the average windspeed? 
+WITH Wind_month AS
+(
+SELECT
+YEAR(RECORDDATE)::VARCHAR AS Year,
+MONTHNAME(RECORDDATE) AS Month,
+ROUND(AVG(dailywindspeed), 2) AS avg_wind_km_h,
+
+RANK () OVER (PARTITION BY YEAR 
+ORDER BY avg_wind_km_h DESC) AS year_rank
+
+FROM WEATHER_DATA.GOLD.dailywindspeed
+GROUP BY 
+YEAR,
+MONTH
+)
+SELECT
+year,
+month,
+avg_wind_km_h
+FROM Wind_month
+WHERE year_rank = 1
+ORDER BY year;
+
+
+-- 6.  Which was the windiest day and what was its average wind speed, calculate for each year? 
+WITH Wind_day AS
+(
+SELECT
+YEAR(RECORDDATE)::VARCHAR AS Year,
+MONTHNAME(RECORDDATE) AS Month,
+DAY(RECORDDATE) AS Windiest_day,
+ROUND(AVG(dailywindspeed), 2) AS avg_windspeed_km_h,
+
+RANK () OVER (PARTITION BY YEAR(RECORDDATE) 
+ORDER BY avg(dailywindspeed)DESC) AS year_rank
+
+FROM WEATHER_DATA.GOLD.dailywindspeed
+GROUP BY 
+YEAR(RECORDDATE),
+RECORDDATE
+),
+Avg_year AS
+(
+SELECT 
+YEAR(RECORDDATE)::VARCHAR AS Year,
+ROUND(AVG(dailywindspeed), 2) AS avg_year_wind_km_h
+FROM WEATHER_DATA.GOLD.dailywindspeed
+GROUP BY YEAR(RECORDDATE)
+)
+
+-- 7.  Which month had the most rain fall each year? 
+SELECT
+YEAR(RECORDDATE)::VARCHAR AS Year,
+MONTHNAME(RECORDDATE) AS Month,
+ROUND(SUM(DAILYRAINFALL), 2) AS Rainfall_mm,
+
+RANK () OVER (PARTITION BY YEAR(RECORDDATE) 
+ORDER BY SUM(DAILYRAINFALL)DESC) AS year_rank
+
+FROM WEATHER_DATA.GOLD.DAILYRAINFALL
+GROUP BY 
+YEAR(RECORDDATE),
+MONTHNAME(RECORDDATE)
+QUALIFY year_rank = 1;
+
+-- 8.  Which month had the most snowfall each year? 
+
+SELECT
+YEAR(RECORDDATE)::VARCHAR AS Year, 
+MONTHNAME(RECORDDATE) AS Month,
+ROUND(SUM(dailysnowfall), 2) AS Snowfall_cm,
+
+RANK () OVER (PARTITION BY year 
+ORDER BY Snowfall_cm DESC) AS year_rank
+
+FROM WEATHER_DATA.GOLD.dailysnowfall
+GROUP BY 1,2
+QUALIFY year_rank = 1;
+
+-- 9.  Which date marked the start of spring each year? 
+
+WITH SpringTemp AS
+(
+    SELECT
+        RECORDDATE,
+        DAILYAVERAGETEMPERATURE,
+        YEAR(RECORDDATE) AS Year
+    FROM WEATHER_DATA.GOLD.dailyaveragetemperature
+),
+TempRange AS
+(
+    SELECT
+        RECORDDATE,
+        Year,
+        SUM(CASE WHEN DAILYAVERAGETEMPERATURE > 0.0 THEN 1 ELSE 0 END)
+            OVER (ORDER BY RECORDDATE ROWS BETWEEN 7 PRECEDING AND CURRENT ROW) AS TempCount
+-- DO THE CURRENT ROW SO ITS IN THE END OF THE 7 DAYS
+   FROM SpringTemp
+)
+SELECT
+    Year,
+    MIN(RECORDDATE) AS SpringStartDate
+FROM TempRange
+--FILTER 7 continuing days with a daily average temperature above 0.0.
+WHERE TempCount = 8
+      AND RECORDDATE >= TO_DATE(Year || '-02-15')
+      AND RECORDDATE <= TO_DATE(Year || '-07-31')
+-- TO_DATE is uset to take out specific dates, in this case year is all o them and then the dates are speciffic 
+GROUP BY Year
+ORDER BY Year
+
+
+
+-- 10. Which year saw the most weather anomalies?
+--Total daily rain fall exceeds 10mm 
+--Total daily snow fall exceeds 30 cm of snow 
+--Average daily temperature was equal to more than 28 C 
+--Hourly wind speed exceeds 60 km/h for any given hour of the day 
+
+
+WITH rain AS
+(
+SELECT 
+YEAR(RECORDDATE)::VARCHAR AS Year,
+COUNT(*) AS Nr_days
+FROM WEATHER_DATA.GOLD.dailyrainfall
+WHERE dailyrainfall > 10
+GROUP BY YEAR
+),
+Snow AS
+(
+SELECT 
+YEAR(RECORDDATE)::VARCHAR AS Year,
+COUNT(*) AS Nr_days
+FROM WEATHER_DATA.GOLD.dailysnowfall
+WHERE dailysnowfall > 30
+GROUP BY YEAR
+),
+Temp AS
+(
+SELECT 
+YEAR(RECORDDATE)::VARCHAR AS Year,
+COUNT(*) AS Nr_days
+FROM WEATHER_DATA.GOLD.dailyaveragetemperature
+WHERE dailyaveragetemperature >= 28
+GROUP BY YEAR
+),
+Wind AS
+(
+SELECT 
+YEAR(RECORDDATE)::VARCHAR AS Year,
+COUNT(*) AS Nr_days
+FROM WEATHER_DATA.silver.hourlywindspeed_silver
+WHERE hourlywindspeed > 60
+GROUP BY YEAR
+)
+
+SELECT
+rain.year,
+COALESCE(rain.Nr_days,0) as Rain_count,
+COALESCE(Snow.Nr_days,0) as Snow_count,
+COALESCE(Temp.Nr_days,0) as Temp_count,
+COALESCE(Wind.Nr_days,0) as Wind_count,
+(Rain_count+Snow_count+Temp_count+Wind_count) AS total_count
+FROM rain
+LEFT JOIN SNOW
+ON Rain.year = Snow.year
+LEFT JOIN TEMP
+ON Rain.year = Temp.year
+LEFT JOIN Wind
+ON Rain.year = Wind.year
+ORDER BY total_count DESC
+LIMIT 10;
